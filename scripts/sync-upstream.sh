@@ -121,13 +121,10 @@ config_api_key() {
 	' "$CONFIG"
 }
 
-# GET /v1/models until it returns 200, for up to 30 seconds. The key goes to
-# curl on stdin, so it is not in argv or in any log.
+# GET /v1/models on port $2 with key $1 until it returns 200, for up to 30
+# seconds. The key goes to curl on stdin, so it is not in argv or in any log.
 health_check() {
-	local key url code _
-	key=$(config_api_key)
-	[ -n "$key" ] || die "No access.api-keys entry in $CONFIG."
-	url="http://127.0.0.1:$(config_port)/v1/models"
+	local key=$1 url="http://127.0.0.1:$2/v1/models" code _
 	for _ in $(seq 30); do
 		code=$(printf 'Authorization: Bearer %s\n' "$key" |
 			curl -s -o /dev/null -w '%{http_code}' -m 5 -H @- "$url" || true)
@@ -161,8 +158,13 @@ check() {
 }
 
 sync() {
-	local previous="$BIN.previous"
+	local previous="$BIN.previous" key port
 	[ -z "$(git status --porcelain)" ] || die "The working tree is not clean. Commit or stash your changes first."
+	# Read the config before the install. A new binary can migrate the config
+	# when it starts, and the health check must not read a partly written file.
+	key=$(config_api_key)
+	[ -n "$key" ] || die "No access.api-keys entry in $CONFIG."
+	port=$(config_port)
 	say "Rebasing $BRANCH onto origin/main."
 	if ! git rebase origin/main "$BRANCH"; then
 		die "The rebase stopped on a conflict.
@@ -179,7 +181,7 @@ git rerere records your fixes and uses them again next time."
 	chmod 755 "$BIN.new"
 	mv -f "$BIN.new" "$BIN"
 	restart
-	if ! health_check; then
+	if ! health_check "$key" "$port"; then
 		say "Restoring the previous binary."
 		mv -f "$previous" "$BIN"
 		restart
