@@ -77,7 +77,8 @@ build() {
 	if ! go vet ./... 2>"$TMP/vet.log"; then
 		cat "$TMP/vet.log" >&2
 		# Upstream CI does not run vet. Findings in test files give a warning only.
-		if grep -v '^#' "$TMP/vet.log" | grep -qv '_test\.go:'; then
+		# Module download messages also go to stderr. They are not findings.
+		if grep -v -e '^#' -e '^go: downloading ' "$TMP/vet.log" | grep -qv '_test\.go:'; then
 			die "go vet found problems outside test files."
 		fi
 		say "go vet found problems in test files only. Continuing."
